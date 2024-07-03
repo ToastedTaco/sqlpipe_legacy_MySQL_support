@@ -37,6 +37,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.42.1 // indirect
 	github.com/aws/smithy-go v1.16.0 // indirect
 	github.com/danieljoos/wincred v1.2.0 // indirect
+	github.com/denisenkom/go-mssqldb v0.12.3 // indirect
 	github.com/dvsekhvalnov/jose2go v1.5.0 // indirect
 	github.com/form3tech-oss/jwt-go v3.2.5+incompatible // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
@@ -54,6 +55,7 @@ require (
 	github.com/klauspost/asmfmt v1.3.2 // indirect
 	github.com/klauspost/compress v1.17.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
+	github.com/lib/pq v1.10.9 // indirect
 	github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 // indirect
 	github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 // indirect
 	github.com/mtibben/percent v0.2.1 // indirect

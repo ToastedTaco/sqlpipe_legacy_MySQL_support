@@ -174,6 +174,8 @@ github.com/aws/smithy-go/waiter
 # github.com/danieljoos/wincred v1.2.0
 ## explicit; go 1.18
 github.com/danieljoos/wincred
+# github.com/denisenkom/go-mssqldb v0.12.3
+## explicit; go 1.13
 # github.com/dvsekhvalnov/jose2go v1.5.0
 ## explicit; go 1.15
 github.com/dvsekhvalnov/jose2go
@@ -277,6 +279,8 @@ github.com/klauspost/compress/zstd/internal/xxhash
 # github.com/klauspost/cpuid/v2 v2.2.6
 ## explicit; go 1.15
 github.com/klauspost/cpuid/v2
+# github.com/lib/pq v1.10.9
+## explicit; go 1.13
 # github.com/microsoft/go-mssqldb v1.6.0
 ## explicit; go 1.17
 github.com/microsoft/go-mssqldb

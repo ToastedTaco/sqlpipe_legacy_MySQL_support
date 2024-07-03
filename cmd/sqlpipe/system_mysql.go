@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
 	"github.com/go-sql-driver/mysql"
+	"strconv"
 )
 
 type Mysql struct {
@@ -740,9 +740,80 @@ func (system Mysql) getSqlFormatters() (
 	}
 }
 
+func (system Mysql) getVersion()(mainVersion string, err error){
+	query := fmt.Sprintf(`SELECT VERSION()`)
+	var rows *sql.Rows
+	rows, err = system.query(query)
+	if err != nil {
+		return "", fmt.Errorf("error getting MySQL version :: %v", err)
+	}
+
+	var version string 
+	if rows.Next() {
+		err := rows.Scan(&version)
+		if err != nil {
+			return "", fmt.Errorf("error scanning version: %v", err)
+		}
+	}
+
+	mainVersion = strings.Split(version,"-")[0]
+
+	return mainVersion, nil
+}
+
+func isVersionLessThan(version string, major, minor, patch int) (verification bool, err error) {
+	vComponents := strings.Split(version, ".")
+	if len(vComponents) != 3 {
+		return false, fmt.Errorf("invalid version format")
+	}
+
+	vMajor, err := strconv.Atoi(vComponents[0])
+	if err != nil {
+		return false, fmt.Errorf("invalid major version: %v", err)
+	}
+
+	vMinor, err := strconv.Atoi(vComponents[1])
+	if err != nil {
+		return false, fmt.Errorf("invalid minor version: %v", err)
+	}
+
+	vPatch, err := strconv.Atoi(vComponents[2])
+	if err != nil {
+		return false, fmt.Errorf("invalid patch version: %v", err)
+	}
+
+	if vMajor < major {
+		return true, nil
+	} else if vMajor == major {
+		if vMinor < minor {
+			return true, nil
+		} else if vMinor == minor {
+			if vPatch < patch {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
+
+}
+
 func (system Mysql) getTableColumnInfosRows(schema, table string) (rows *sql.Rows, err error) {
-	query := fmt.Sprintf(`
-		WITH PrimaryKeys AS (
+	version, err := system.getVersion()
+	verification, err := isVersionLessThan(version, 8, 0, 0)
+
+	if verification {
+		query := fmt.Sprintf(`
+		SELECT
+			columns.COLUMN_NAME AS col_name,
+			columns.DATA_TYPE AS col_type,
+			COALESCE(columns.NUMERIC_PRECISION, -1) AS col_precision,
+			COALESCE(columns.NUMERIC_SCALE, -1) AS col_scale,
+			COALESCE(columns.CHARACTER_MAXIMUM_LENGTH, -1) AS col_length,
+			CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN true ELSE false END AS col_is_primary
+		FROM
+			information_schema.COLUMNS AS columns,
+			(
 			SELECT
 				kcu.COLUMN_NAME
 			FROM
@@ -753,28 +824,56 @@ func (system Mysql) getTableColumnInfosRows(schema, table string) (rows *sql.Row
 			WHERE
 				tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
 				AND kcu.TABLE_NAME = '%v'
-		)
-		
-		SELECT
-			columns.COLUMN_NAME AS col_name,
-			columns.DATA_TYPE AS col_type,
-			COALESCE(columns.NUMERIC_PRECISION, -1) AS col_precision,
-			COALESCE(columns.NUMERIC_SCALE, -1) AS col_scale,
-			COALESCE(columns.CHARACTER_MAXIMUM_LENGTH, -1) AS col_length,
-			CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN true ELSE false END AS col_is_primary
-		FROM
-			information_schema.COLUMNS AS columns
+			) AS PrimaryKeys
 		LEFT JOIN PrimaryKeys pk ON columns.COLUMN_NAME = pk.COLUMN_NAME
 		WHERE
 			columns.TABLE_NAME = '%v'
 		ORDER BY
 			columns.ORDINAL_POSITION;
-	`, table, table)
+		`, table, table)
 
-	rows, err = system.query(query)
-	if err != nil {
-		return nil, fmt.Errorf("error getting table column infos rows :: %v", err)
+		rows, err = system.query(query)
+		if err != nil {
+			return nil, fmt.Errorf("error getting table column infos rows :: %v", err)
+		}
+
+		return rows, nil
+	} else {
+		query := fmt.Sprintf(`
+			WITH PrimaryKeys AS (
+				SELECT
+					kcu.COLUMN_NAME
+				FROM
+					information_schema.KEY_COLUMN_USAGE AS kcu
+				JOIN information_schema.TABLE_CONSTRAINTS AS tc
+					ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+					AND kcu.TABLE_NAME = tc.TABLE_NAME
+				WHERE
+					tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+					AND kcu.TABLE_NAME = '%v'
+			)
+			
+			SELECT
+				columns.COLUMN_NAME AS col_name,
+				columns.DATA_TYPE AS col_type,
+				COALESCE(columns.NUMERIC_PRECISION, -1) AS col_precision,
+				COALESCE(columns.NUMERIC_SCALE, -1) AS col_scale,
+				COALESCE(columns.CHARACTER_MAXIMUM_LENGTH, -1) AS col_length,
+				CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN true ELSE false END AS col_is_primary
+			FROM
+				information_schema.COLUMNS AS columns
+			LEFT JOIN PrimaryKeys pk ON columns.COLUMN_NAME = pk.COLUMN_NAME
+			WHERE
+				columns.TABLE_NAME = '%v'
+			ORDER BY
+				columns.ORDINAL_POSITION;
+		`, table, table)
+
+		rows, err = system.query(query)
+		if err != nil {
+			return nil, fmt.Errorf("error getting table column infos rows :: %v", err)
+		}
+
+		return rows, nil
 	}
-
-	return rows, nil
 }
