@@ -812,8 +812,8 @@ func (system Mysql) getTableColumnInfosRows(schema, table string) (rows *sql.Row
 			COALESCE(columns.CHARACTER_MAXIMUM_LENGTH, -1) AS col_length,
 			CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN true ELSE false END AS col_is_primary
 		FROM
-			information_schema.COLUMNS AS columns,
-			(
+			information_schema.COLUMNS AS columns
+		LEFT JOIN (
 			SELECT
 				kcu.COLUMN_NAME
 			FROM
@@ -824,8 +824,7 @@ func (system Mysql) getTableColumnInfosRows(schema, table string) (rows *sql.Row
 			WHERE
 				tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
 				AND kcu.TABLE_NAME = '%v'
-			) AS PrimaryKeys
-		LEFT JOIN PrimaryKeys pk ON columns.COLUMN_NAME = pk.COLUMN_NAME
+			) AS pk ON columns.COLUMN_NAME = pk.COLUMN_NAME
 		WHERE
 			columns.TABLE_NAME = '%v'
 		ORDER BY
