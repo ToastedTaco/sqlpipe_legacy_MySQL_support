@@ -4,10 +4,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
-	"time"
 	"github.com/go-sql-driver/mysql"
 	"strconv"
+	"strings"
+	"time"
 )
 
 type Mysql struct {
@@ -740,7 +740,7 @@ func (system Mysql) getSqlFormatters() (
 	}
 }
 
-func (system Mysql) getVersion()(mainVersion string, err error){
+func (system Mysql) getVersion() (mainVersion string, err error) {
 	query := fmt.Sprintf(`SELECT VERSION()`)
 	var rows *sql.Rows
 	rows, err = system.query(query)
@@ -748,7 +748,7 @@ func (system Mysql) getVersion()(mainVersion string, err error){
 		return "", fmt.Errorf("error getting MySQL version :: %v", err)
 	}
 
-	var version string 
+	var version string
 	if rows.Next() {
 		err := rows.Scan(&version)
 		if err != nil {
@@ -756,7 +756,7 @@ func (system Mysql) getVersion()(mainVersion string, err error){
 		}
 	}
 
-	mainVersion = strings.Split(version,"-")[0]
+	mainVersion = strings.Split(version, "-")[0]
 
 	return mainVersion, nil
 }
@@ -803,37 +803,80 @@ func (system Mysql) getTableColumnInfosRows(schema, table string) (rows *sql.Row
 	verification, err := isVersionLessThan(version, 8, 0, 0)
 
 	if verification {
-		query := fmt.Sprintf(`
-		SELECT
-			columns.COLUMN_NAME AS col_name,
-			columns.DATA_TYPE AS col_type,
-			COALESCE(columns.NUMERIC_PRECISION, -1) AS col_precision,
-			COALESCE(columns.NUMERIC_SCALE, -1) AS col_scale,
-			COALESCE(columns.CHARACTER_MAXIMUM_LENGTH, -1) AS col_length,
-			CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN true ELSE false END AS col_is_primary
-		FROM
-			information_schema.COLUMNS AS columns
-		LEFT JOIN (
-			SELECT
-				kcu.COLUMN_NAME
-			FROM
-				information_schema.KEY_COLUMN_USAGE AS kcu
-			JOIN information_schema.TABLE_CONSTRAINTS AS tc
-				ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
-				AND kcu.TABLE_NAME = tc.TABLE_NAME
-			WHERE
-				tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
-				AND kcu.TABLE_NAME = '%v'
-			) AS pk ON columns.COLUMN_NAME = pk.COLUMN_NAME
-		WHERE
-			columns.TABLE_NAME = '%v'
-		ORDER BY
-			columns.ORDINAL_POSITION;
-		`, table, table)
+		createTempColumns := fmt.Sprintf(`
+        CREATE TEMPORARY TABLE temp_columns AS
+        SELECT 
+            COLUMN_NAME, DATA_TYPE, NUMERIC_PRECISION, NUMERIC_SCALE, CHARACTER_MAXIMUM_LENGTH
+        FROM
+            information_schema.COLUMNS
+        WHERE
+            TABLE_SCHEMA = '%s'
+            AND TABLE_NAME = '%s';
+    `, schema, table)
+
+		err = system.exec(createTempColumns)
+		if err != nil {
+			return nil, fmt.Errorf("error creating temp_columns table :: %v", err)
+		}
+
+		// Create temporary table for primary keys
+		createTempPrimaryKeys := fmt.Sprintf(`
+        CREATE TEMPORARY TABLE temp_primary_keys AS
+        SELECT 
+            COLUMN_NAME
+        FROM 
+            information_schema.KEY_COLUMN_USAGE kcu
+        JOIN 
+            information_schema.TABLE_CONSTRAINTS tc 
+        ON 
+            kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME 
+            AND kcu.TABLE_SCHEMA = tc.TABLE_SCHEMA
+            AND kcu.TABLE_NAME = tc.TABLE_NAME
+        WHERE 
+            tc.CONSTRAINT_TYPE = 'PRIMARY KEY' 
+            AND kcu.TABLE_SCHEMA = '%s'
+            AND kcu.TABLE_NAME = '%s';
+    `, schema, table)
+
+		err = system.exec(createTempPrimaryKeys)
+		if err != nil {
+			return nil, fmt.Errorf("error creating temp_primary_keys table :: %v", err)
+		}
+
+		// Query the combined data
+		query := `
+        SELECT
+            c.COLUMN_NAME AS col_name,
+            c.DATA_TYPE AS col_type,
+            COALESCE(c.NUMERIC_PRECISION, -1) AS col_precision,
+            COALESCE(c.NUMERIC_SCALE, -1) AS col_scale,
+            COALESCE(c.CHARACTER_MAXIMUM_LENGTH, -1) AS col_length,
+            CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN true ELSE false END AS col_is_primary
+        FROM
+            temp_columns c
+        LEFT JOIN
+            temp_primary_keys pk ON c.COLUMN_NAME = pk.COLUMN_NAME
+        ORDER BY
+            c.COLUMN_NAME;
+    `
 
 		rows, err = system.query(query)
 		if err != nil {
 			return nil, fmt.Errorf("error getting table column infos rows :: %v", err)
+		}
+
+		// Drop the temporary tables
+		dropTempColumns := `DROP TEMPORARY TABLE IF EXISTS temp_columns;`
+		dropTempPrimaryKeys := `DROP TEMPORARY TABLE IF EXISTS temp_primary_keys;`
+
+		err = system.exec(dropTempColumns)
+		if err != nil {
+			return nil, fmt.Errorf("error dropping temp_columns table :: %v", err)
+		}
+
+		err = system.exec(dropTempPrimaryKeys)
+		if err != nil {
+			return nil, fmt.Errorf("error dropping temp_primary_keys table :: %v", err)
 		}
 
 		return rows, nil
